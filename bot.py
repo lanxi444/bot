@@ -10,7 +10,7 @@ TOKEN = "8896652212:AAE5hg7ODgmoTkhL7KbxdizWYg--PcT0jjU"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Хранилище последних данных об авариях и ремонтах (в реальном проекте здесь будет парсер или API)
+# Хранилище последних данных об авариях и ремонтах
 current_incidents = {
     "accidents": [
         "⚠️ **М-3 «Украина», 35-й км (возле Внуково):** Оформление ДТП в среднем ряду, занята полоса.",
@@ -63,12 +63,10 @@ async def cmd_cameras(message: Message):
     )
     await message.answer(cameras_text, parse_mode="Markdown", disable_web_page_preview=True)
 
-# Функция для фоновой проверки (сюда можно добавить реальный парсинг сайтов или API)
+# Функция для фоновой проверки
 async def check_road_updates():
     while True:
-        await asyncio.sleep(300)  н# Проверка каждые 5 минут
-        # Здесь в будущем будет логика запроса к API карт. 
-        # Если появляется новое ЧП, его можно автоматически отправлять в админ-чат или канал.
+        await asyncio.sleep(300)  # Проверка каждые 5 минут
         logging.info("Фоновая проверка дорожной обстановки...")
 
 async def main():
