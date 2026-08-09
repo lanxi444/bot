@@ -1,120 +1,181 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher
+from datetime import datetime
+
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message
-from duckduckgo_search import DDGS  # Библиотека для поиска свежих новостей
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.fsm.storage.memory import MemoryStorage
 
-TOKEN = "8896652212:AAE5hg7ODgmoTkhL7KbxdizWYg--PcT0jjU"
+# --- КОНФИГУРАЦИЯ ---
+BOT_TOKEN = "8924797159:AAHzZ1G5R6sKXPaHIOMu5xIhZtxq3ik2YFM"
+ADMIN_IDS = [8924797159]  # Ваш Telegram ID
 
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-# Автоматическое хранилище инцидентов
-current_incidents = {
-    "accidents": ["⏳ Инициализация... Ожидание первой проверки новостей."],
-    "works": ["⏳ Инициализация... Ожидание первой проверки дорожных работ."]
-}
+# Инициализация бота и диспетчера
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
 
-# Функция для автоматического поиска новостей о ДТП и работах на М-3
-async def fetch_road_news():
-    global current_incidents
-    while True:
-        try:
-            logging.info("🔄 Фоновая проверка: ищем свежие новости по Киевскому шоссе (М-3)...")
-            
-            with DDGS() as ddgs:
-                # Ищем новости про ДТП на М-3 Украина / Киевское шоссе за последнее время
-                accidents_results = list(ddgs.text("Киевское шоссе М3 ДТП авария сегодня", max_results=3))
-                works_results = list(ddgs.text("Киевское шоссе М3 дорожные работы ремонт", max_results=3))
-                
-                if accidents_results:
-                    new_accidents = []
-                    for item in accidents_results:
-                        title = item.get('title', 'Без названия')
-                        snippet = item.get('body', '')
-                        new_accidents.f(f"⚠️ {title} — {snippet[:100]}...")
-                    if new_accidents:
-                        current_incidents["accidents"] = new_accidents[:3]
-
-                if works_results:
-                    new_works = []
-                    for item in works_results:
-                        title = item.get('title', 'Без названия')
-                        snippet = item.get('body', '')
-                        new_works.append(f"🚧 {title} — {snippet[:100]}...")
-                    if new_works:
-                        current_incidents["works"] = new_works[:3]
-                        
-            logging.info("✅ Данные успешно обновлены из интернета!")
-        except Exception as e:
-            logging.error(f"Ошибка при фоновом обновлении новостей: {e}")
-
-        # Проверка каждые 5 минут (300 секунд)
-        await asyncio.sleep(300)
+# --- ОБРАБОТЧИКИ КОМАНД ---
 
 @dp.message(Command("start"))
-async def cmd_start(message: Message):
-    welcome_text = (
-        "🚗 **Автоматический бот Киевского шоссе (М-3)**\n\n"
-        "Я каждые 5 минут сканирую новости и интернет на наличие ДТП и дорожных работ.\n\n"
-        "📌 **Команды:**\n"
-        "/status — Общая ситуация\n"
-        "/accidents — Свежие аварии и ремонт (авто-обновление)\n"
-        "/cameras — Камеры и карты\n\n"
-        "🛠 Также доступен ручной ввод:\n"
-        "`/add_acc [текст]` | `/add_work [текст]`"
-    )
+async def cmd_start(message: types.Message):
+    """Обработчик команды /start"""
+    user_id = message.from_user.id
+    user_name = message.from_user.full_name
+    
+    welcome_text = f"""
+👋 *Здравствуйте, {user_name}!*
+
+🤖 Я бот-уведомитель для магазина **"Мир Шаров"**.
+
+📦 Моя задача — сообщать вам о новых заказах с сайта.
+
+🔑 Команды:
+/start — показать это сообщение
+/help — список всех команд
+/stats — статистика бота
+/admin — информация для администраторов
+
+💡 Если вы администратор, я буду присылать вам уведомления о каждом новом заказе.
+    """
+    
     await message.answer(welcome_text, parse_mode="Markdown")
 
-@dp.message(Command("status"))
-async def cmd_status(message: Message):
-    status_text = (
-        "📊 **Оперативная ситуация на М-3 «Украина»:**\n\n"
-        "• Мониторинг пробок: Активен (автоматический режим)\n"
-        "• Фоновое обновление новостей: Каждые 5 минут\n"
-        "• Используйте /accidents для просмотра актуальных сводок по ДТП."
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    """Обработчик команды /help"""
+    help_text = """
+📚 *Список доступных команд:*
+
+/start — приветственное сообщение
+/help — этот список команд
+/stats — статистика бота
+/ping — проверка работоспособности
+/admin — информация для администраторов
+
+📦 *Для администраторов:*
+Когда на сайте оформляется новый заказ, я автоматически присылаю уведомление в этот чат.
+
+🔔 Уведомление содержит:
+• Номер и дату заказа
+• Информацию о клиенте
+• Состав заказа
+• Сумму
+• Код отслеживания
+    """
+    
+    await message.answer(help_text, parse_mode="Markdown")
+
+@dp.message(Command("ping"))
+async def cmd_ping(message: types.Message):
+    """Проверка работы бота"""
+    start_time = datetime.now()
+    await message.answer("🏓 Понг! Бот работает.")
+    end_time = datetime.now()
+    response_time = (end_time - start_time).total_seconds() * 1000
+    await message.answer(f"⏱ Время ответа: {response_time:.0f} мс")
+
+@dp.message(Command("stats"))
+async def cmd_stats(message: types.Message):
+    """Статистика бота"""
+    stats_text = f"""
+📊 *Статистика бота:*
+
+🔄 Статус: ✅ Работает
+📅 Запущен: {datetime.now().strftime("%d.%m.%Y %H:%M")}
+🤖 Версия: 1.0.0
+📦 Ожидание заказов...
+
+💡 Уведомления приходят автоматически при оформлении заказа на сайте.
+    """
+    
+    await message.answer(stats_text, parse_mode="Markdown")
+
+@dp.message(Command("admin"))
+async def cmd_admin(message: types.Message):
+    """Информация для администраторов"""
+    user_id = message.from_user.id
+    is_admin = user_id in ADMIN_IDS
+    
+    admin_text = f"""
+🔐 *Информация для администраторов*
+
+Ваш Telegram ID: `{user_id}`
+Статус: {'✅ Вы администратор' if is_admin else '❌ Вы не администратор'}
+
+{'📌 Вы будете получать уведомления о заказах.' if is_admin else ''}
+
+💡 *Как стать администратором:*
+1. Узнайте свой Telegram ID у бота @userinfobot
+2. Добавьте ID в список ADMIN_IDS в файле bot.py
+3. Перезапустите бота
+
+📝 Текущий список администраторов:
+{chr(10).join([f'• `{aid}`' for aid in ADMIN_IDS]) if ADMIN_IDS else '• (пусто)'}
+    """
+    
+    await message.answer(admin_text, parse_mode="Markdown")
+
+# --- ОБРАБОТЧИКИ CALLBACK ---
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('view_order_'))
+async def process_view_order(callback_query: types.CallbackQuery):
+    """Обработчик нажатия кнопки 'Посмотреть заказ'"""
+    order_id = callback_query.data.replace('view_order_', '')
+    await callback_query.answer(f"👀 Просмотр заказа #{order_id}")
+    await callback_query.message.reply(
+        f"🔍 Для просмотра заказа #{order_id} откройте админ-панель на сайте.\n\nhttps://mirsharov-pb.ru/?admin=mirsharov2026",
+        parse_mode="Markdown"
     )
-    await message.answer(status_text, parse_mode="Markdown")
 
-@dp.message(Command("accidents"))
-async def cmd_accidents(message: Message):
-    accidents_list = "\n\n".join(current_incidents["accidents"]) if current_incidents["accidents"] else "✅ Свежих аварий не найдено."
-    works_list = "\n\n".join(current_incidents["works"]) if current_incidents["works"] else "✅ Дорожных работ не найдено."
-
-    response_text = (
-        f"🚨 **Оперативная сводка из интернета:**\n\n"
-        f"**🔴 Последние ДТП и происшествия:**\n{accidents_list}\n\n"
-        f"**🚧 Дорожные работы и ремонт:**\n{works_list}"
+@dp.callback_query(lambda c: c.data and c.data.startswith('process_order_'))
+async def process_order(callback_query: types.CallbackQuery):
+    """Обработчик нажатия кнопки 'Отметить как обработанный'"""
+    order_id = callback_query.data.replace('process_order_', '')
+    
+    await callback_query.answer(f"✅ Заказ #{order_id} отмечен как обработанный!")
+    
+    await callback_query.message.edit_text(
+        text=callback_query.message.text + "\n\n✅ *Заказ отмечен как обработанный администратором.*",
+        parse_mode="Markdown"
     )
-    await message.answer(response_text, parse_mode="Markdown")
+    
+    await callback_query.message.reply(
+        f"✅ Заказ #{order_id} успешно отмечен как обработанный!",
+        parse_mode="Markdown"
+    )
 
-@dp.message(Command("add_acc"))
-async def add_accident(message: Message):
-    text = message.text.replace("/add_acc", "").strip()
-    if text:
-        current_incidents["accidents"].insert(0, f"⚠️ (От водителя) {text}")
-        await message.answer(f"✅ Добавлено в сводку аварий!")
-
-@dp.message(Command("add_work"))
-async def add_work(message: Message):
-    text = message.text.replace("/add_work", "").strip()
-    if text:
-        current_incidents["works"].insert(0, f"🚧 (От водителя) {text}")
-        await message.answer(f"✅ Добавлено в сводку работ!")
-
-@dp.message(Command("cameras"))
-async def cmd_cameras(message: Message):
-    await message.answer("📷 [Яндекс.Карты — Киевское шоссе](https://yandex.ru/maps)", parse_mode="Markdown", disable_web_page_preview=True)
+# --- ЗАПУСК БОТА ---
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
-    print("Бот запущен с автоматическим поиском новостей!")
+    """Главная функция запуска бота"""
+    logger.info("🚀 Бот запускается...")
     
-    # Запускаем фоновый цикл сбора новостей параллельно с ботом
-    asyncio.create_task(fetch_road_news())
+    if not BOT_TOKEN:
+        logger.error("❌ Токен бота не найден!")
+        return
     
-    await dp.start_polling(bot)
+    try:
+        me = await bot.get_me()
+        logger.info(f"✅ Бот успешно подключился к Telegram API")
+        logger.info(f"📌 Имя бота: @{me.username}")
+        logger.info(f"🆔 ID бота: {me.id}")
+        
+        logger.info("📡 Начинаем прослушивание обновлений...")
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"❌ Ошибка при запуске бота: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
